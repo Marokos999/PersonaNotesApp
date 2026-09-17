@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/PersonaNotesApp.API/PersonaNotesApp.API.csproj" />
+    <Project Path="src/PersonaNotesApp.Shared/PersonaNotesApp.Shared.csproj" />
+    <Project Path="src/PersonaNotesApp.Web/PersonaNotesApp.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/PersonaNotesApp.API.Tests/PersonaNotesApp.API.Tests.csproj" />
+  </Folder>
+</Solution>

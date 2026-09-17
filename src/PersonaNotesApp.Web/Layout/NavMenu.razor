@@ -1,0 +1,89 @@
+@inject TagService TagService
+@inject NavigationManager Nav
+@inject JwtAuthProvider Auth
+@inject HttpClient Http
+
+<a class="sidebar-brand" href="/notes">
+    <span class="brand-icon">📝</span>
+    <span class="brand-name">PersonaNotes</span>
+</a>
+
+<nav class="sidebar-nav">
+    <NavLink class="nav-item" href="notes" Match="NavLinkMatch.All">
+        <span class="nav-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <line x1="16" y1="13" x2="8" y2="13"/>
+                <line x1="16" y1="17" x2="8" y2="17"/>
+            </svg>
+        </span>
+        <span>All Notes</span>
+    </NavLink>
+
+    @if (tags.Any())
+    {
+        <div class="sidebar-section-label">Tags</div>
+        @foreach (var tag in tags)
+        {
+            <button class="nav-item tag-nav-item @(IsActiveTag(tag.Name) ? "active" : "")"
+                    @onclick="() => NavigateToTag(tag.Name)">
+                <span class="tag-dot" style="background: @tag.Color"></span>
+                <span>@tag.Name</span>
+            </button>
+        }
+    }
+</nav>
+
+<div class="sidebar-footer">
+    @if (userEmail is not null)
+    {
+        <div class="sidebar-user">
+            <div class="sidebar-user-avatar">@userEmail[0].ToString().ToUpper()</div>
+            <span class="sidebar-user-email" title="@userEmail">@userEmail</span>
+        </div>
+    }
+    <button class="btn-logout" @onclick="DoLogout">
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+            <polyline points="16 17 21 12 16 7"/>
+            <line x1="21" y1="12" x2="9" y2="12"/>
+        </svg>
+        <span>Logout</span>
+    </button>
+</div>
+
+@code {
+    private List<TagDto> tags = [];
+    private string? userEmail;
+
+    protected override async Task OnInitializedAsync()
+    {
+        tags = await TagService.GetAllTagsAsync();
+
+        var authState = await Auth.GetAuthenticationStateAsync();
+        userEmail = authState.User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
+    }
+
+    private void NavigateToTag(string name) =>
+        Nav.NavigateTo($"/notes?tag={Uri.EscapeDataString(name)}");
+
+    private bool IsActiveTag(string name)
+    {
+        var query = new Uri(Nav.Uri).Query.TrimStart('?');
+        foreach (var part in query.Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var kv = part.Split('=', 2);
+            if (kv.Length == 2 && Uri.UnescapeDataString(kv[0]) == "tag")
+                return Uri.UnescapeDataString(kv[1]) == name;
+        }
+        return false;
+    }
+
+    private async Task DoLogout()
+    {
+        await Http.PostAsync("/api/auth/logout", null);
+        await Auth.NotifyLogoutAsync();
+        Nav.NavigateTo("/login");
+    }
+}

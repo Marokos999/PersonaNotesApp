@@ -1,0 +1,48 @@
+services:
+  api:
+    build: .
+    container_name: pna-api
+    ports:
+      - "8080:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__DefaultConnection: "Host=pna-db;Port=5432;Database=personanotes;Username=postgres;Password=postgres"
+      Jwt__Secret: "CHANGE-ME-32-CHARS-MINIMUM-SECRET-KEY"
+      Jwt__Issuer: PersonaNotesApp
+      Jwt__Audience: PersonaNotesApp
+      Jwt__AccessTokenExpiryMinutes: "15"
+      Jwt__RefreshTokenExpiryDays: "30"
+    depends_on:
+      pna-db:
+        condition: service_healthy
+    networks:
+      - pna-network
+    restart: unless-stopped
+
+  pna-db:
+    image: postgres:16-alpine
+    container_name: pna-db
+    environment:
+      POSTGRES_DB: personanotes
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - pna-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d personanotes"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - pna-network
+    restart: unless-stopped
+
+networks:
+  pna-network:
+    name: pna-network
+    driver: bridge
+
+volumes:
+  pna-postgres-data:
+    name: pna-postgres-data

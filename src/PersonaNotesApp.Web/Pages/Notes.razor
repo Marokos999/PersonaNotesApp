@@ -1,0 +1,173 @@
+@page "/notes"
+@attribute [Authorize]
+@inject NoteService NoteService
+@inject TagService TagService
+@inject NavigationManager Nav
+
+<PageTitle>Notes — PersonaNotes</PageTitle>
+
+
+<div class="notes-header">
+    <h1>Notes</h1>
+    <div class="d-flex gap-2">
+        <a class="btn btn-outline-secondary btn-sm" href="/notes/archived">📥 Archived</a>
+        <button class="btn btn-primary" @onclick="ShowCreateForm">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            New Note
+        </button>
+    </div>
+</div>
+
+<div class="notes-toolbar">
+    @if (!string.IsNullOrEmpty(selectedTag))
+    {
+        <div class="active-tag-bar">
+            <span style="color: @(tags.FirstOrDefault(t => t.Name == selectedTag)?.Color ?? "#6b7280")">● @selectedTag</span>
+            <button class="clear-tag-btn" @onclick="ClearTag">✕ Clear filter</button>
+        </div>
+    }
+    <div class="search-input-wrap">
+        <span class="search-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </span>
+        <input class="form-control" placeholder="Search notes..." @bind="searchQuery" @bind:event="oninput" @onkeyup="ApplyFilters" />
+    </div>
+</div>
+
+@if (showForm)
+{
+    <div class="note-form-card">
+        <h4>@(editingId.HasValue ? "Edit Note" : "New Note")</h4>
+        <input class="form-control mb-2" placeholder="Title" @bind="formTitle" />
+        <textarea class="form-control mb-2" rows="6" placeholder="Content (Markdown supported)" @bind="formContent"></textarea>
+        <input class="form-control mb-2" placeholder="Tags (comma separated, e.g. Work, Ideas)" @bind="formTags" />
+        <div class="form-actions">
+            <button class="btn btn-primary" @onclick="SaveNote">Save</button>
+            <button class="btn btn-secondary" @onclick="HideForm">Cancel</button>
+        </div>
+    </div>
+}
+
+@if (errorMessage is not null)
+{
+    <p style="color:red;padding:1rem">Error: @errorMessage</p>
+}
+
+@if (isLoading)
+{
+    <div class="loading-state">
+        <span>Loading notes...</span>
+    </div>
+}
+else if (!notes.Any())
+{
+    <div class="empty-state">
+        <span class="empty-state-icon">📝</span>
+        <p>No notes found.</p>
+        <p>@(string.IsNullOrEmpty(searchQuery) && selectedTag == null ? "Create your first note!" : "Try a different search or filter.")</p>
+    </div>
+}
+else
+{
+    <div class="notes-grid">
+        @foreach (var note in notes)
+        {
+            <div class="note-card" @onclick="() => OpenNote(note.Id)">
+                <div class="note-card-header">
+                    <h5>@(note.IsPinned ? "📌 " : "")@note.Title</h5>
+                    <small>@note.UpdatedAt.ToLocalTime().ToString("dd MMM")</small>
+                </div>
+                <p class="note-preview">@GetPreview(note.Content)</p>
+                @if (note.Tags.Any())
+                {
+                    <div class="note-tags">
+                        @foreach (var tag in note.Tags)
+                        {
+                            <span class="tag-chip" style="background-color: @(tag.Color + "22"); color: @tag.Color">@tag.Name</span>
+                        }
+                    </div>
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "tag")]
+    public string? TagFilter { get; set; }
+
+    private List<NoteDto> notes = [];
+    private List<TagDto> tags = [];
+    private bool isLoading = true;
+    private string? errorMessage;
+    private bool showForm;
+    private string? selectedTag;
+    private string searchQuery = "";
+    private Guid? editingId;
+    private string formTitle = "";
+    private string formContent = "";
+    private string formTags = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        tags = await TagService.GetAllTagsAsync();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        selectedTag = TagFilter;
+        await LoadNotes();
+    }
+
+    private async Task LoadNotes()
+    {
+        isLoading = true;
+        errorMessage = null;
+        try
+        {
+            notes = await NoteService.GetAllNotesAsync(selectedTag, searchQuery);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        isLoading = false;
+    }
+
+    private async Task ApplyFilters() => await LoadNotes();
+
+    private void ClearTag() => Nav.NavigateTo("/notes");
+
+    private void ShowCreateForm()
+    {
+        editingId = null;
+        formTitle = "";
+        formContent = "";
+        formTags = "";
+        showForm = true;
+    }
+
+    private void HideForm() => showForm = false;
+
+    private async Task SaveNote()
+    {
+        var tagList = formTags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+        if (editingId.HasValue)
+            await NoteService.UpdateNoteAsync(editingId.Value, new UpdateNoteRequest { Title = formTitle, Content = formContent, Tags = tagList });
+        else
+            await NoteService.CreateNoteAsync(new CreateNoteRequest { Title = formTitle, Content = formContent, Tags = tagList });
+
+        HideForm();
+        tags = await TagService.GetAllTagsAsync();
+        await LoadNotes();
+    }
+
+    private void OpenNote(Guid id) => Nav.NavigateTo($"/notes/{id}");
+
+    private static string GetPreview(string content)
+    {
+        var plain = System.Text.RegularExpressions.Regex.Replace(content, @"[#*_`>\[\]!-]", "").Trim();
+        plain = System.Text.RegularExpressions.Regex.Replace(plain, @"\s+", " ");
+        return plain.Length > 140 ? plain[..140] + "…" : plain;
+    }
+}

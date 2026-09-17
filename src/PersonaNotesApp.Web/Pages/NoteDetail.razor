@@ -1,0 +1,175 @@
+@page "/notes/{Id:guid}"
+@attribute [Authorize]
+@inject NoteService NoteService
+@inject TagService TagService
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@implements IDisposable
+
+<PageTitle>@(note?.Title ?? "Note")</PageTitle>
+
+@if (isLoading)
+{
+    <div class="loading-state">Loading note...</div>
+}
+else if (note is null)
+{
+    <div class="empty-state">
+        <span class="empty-state-icon">🔍</span>
+        <p>Note not found.</p>
+        <button class="btn btn-secondary btn-sm" @onclick="GoBack">← Back to notes</button>
+    </div>
+}
+else if (isEditing)
+{
+    <div class="note-edit">
+        <div class="note-detail-header">
+            <button class="btn btn-sm btn-outline-secondary" @onclick="CancelEdit">← Cancel</button>
+            <button class="btn btn-sm btn-primary" @onclick="SaveEdit">Save changes</button>
+        </div>
+        <input class="form-control mb-2 fs-4" placeholder="Title" @bind="formTitle" />
+        <textarea class="form-control mb-2" rows="16" placeholder="Content (Markdown supported)" @bind="formContent"></textarea>
+        <input class="form-control mb-2" placeholder="Tags (comma separated)" @bind="formTags" />
+    </div>
+}
+else
+{
+    <div class="note-detail">
+        <div class="note-detail-header">
+            <button class="btn btn-sm btn-outline-secondary" @onclick="GoBack">← Back</button>
+            <div class="note-detail-actions">
+                <button class="btn btn-sm @(note.IsPinned ? "btn-primary" : "btn-outline-secondary")"
+                        @onclick="TogglePin" title="@(note.IsPinned ? "Unpin" : "Pin")">
+                    📌 @(note.IsPinned ? "Pinned" : "Pin")
+                </button>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="StartEdit">Edit</button>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="ToggleArchive"
+                        title="@(note.IsArchived ? "Restore" : "Archive")">
+                    @(note.IsArchived ? "📤 Restore" : "📥 Archive")
+                </button>
+                <button class="btn btn-sm btn-outline-danger" @onclick="DeleteNote">Delete</button>
+            </div>
+        </div>
+        <h1 class="note-title">
+            @if (note.IsPinned) { <span style="font-size:1.2rem;margin-right:.4rem">📌</span> }
+            @note.Title
+        </h1>
+        <div class="note-meta">
+            <span>Updated @note.UpdatedAt.ToLocalTime().ToString("dd MMM yyyy · HH:mm")</span>
+            @if (note.IsArchived)
+            {
+                <span class="note-archived-badge">Archived</span>
+            }
+            @foreach (var tag in note.Tags)
+            {
+                <span class="tag-chip" style="background-color: @(tag.Color + "22"); color: @tag.Color">@tag.Name</span>
+            }
+        </div>
+        <div class="note-content">
+            @((MarkupString)note.ContentHtml)
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private NoteDto? note;
+    private bool isLoading = true;
+    private bool isEditing;
+    private string formTitle = "";
+    private string formContent = "";
+    private string formTags = "";
+    private DotNetObjectReference<NoteDetail>? dotnetRef;
+    private Guid lastRenderedId;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        isLoading = true;
+        note = await NoteService.GetNoteByIdAsync(Id);
+        isLoading = false;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!isLoading && !isEditing && note is not null && note.Id != lastRenderedId)
+        {
+            lastRenderedId = note.Id;
+            dotnetRef ??= DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("enableTaskLists", dotnetRef);
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnCheckboxToggled(int index, bool isChecked)
+    {
+        if (note is null) return;
+        var lines = note.Content.Split('\n').ToList();
+        int count = 0;
+        for (int i = 0; i < lines.Count; i++)
+        {
+            if (lines[i].Contains("- [ ]") || lines[i].Contains("- [x]"))
+            {
+                if (count == index)
+                {
+                    lines[i] = isChecked
+                        ? lines[i].Replace("- [ ]", "- [x]")
+                        : lines[i].Replace("- [x]", "- [ ]");
+                    break;
+                }
+                count++;
+            }
+        }
+        var updatedContent = string.Join('\n', lines);
+        var tagList = note.Tags.Select(t => t.Name).ToList();
+        note = await NoteService.UpdateNoteAsync(Id, new UpdateNoteRequest { Title = note.Title, Content = updatedContent, Tags = tagList });
+        lastRenderedId = Guid.Empty;
+        StateHasChanged();
+    }
+
+    private void StartEdit()
+    {
+        formTitle = note!.Title;
+        formContent = note.Content;
+        formTags = string.Join(", ", note.Tags.Select(t => t.Name));
+        isEditing = true;
+    }
+
+    private void CancelEdit() => isEditing = false;
+
+    private async Task SaveEdit()
+    {
+        var tagList = formTags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+        note = await NoteService.UpdateNoteAsync(Id, new UpdateNoteRequest { Title = formTitle, Content = formContent, Tags = tagList });
+        isEditing = false;
+    }
+
+    private async Task TogglePin()
+    {
+        await NoteService.TogglePinAsync(Id);
+        note = await NoteService.GetNoteByIdAsync(Id);
+        StateHasChanged();
+    }
+
+    private async Task ToggleArchive()
+    {
+        await NoteService.ToggleArchiveAsync(Id);
+        if (note!.IsArchived)
+            Nav.NavigateTo("/notes");
+        else
+        {
+            note = await NoteService.GetNoteByIdAsync(Id);
+            StateHasChanged();
+        }
+    }
+
+    private async Task DeleteNote()
+    {
+        await NoteService.DeleteNoteAsync(Id);
+        Nav.NavigateTo("/notes");
+    }
+
+    private void GoBack() => Nav.NavigateTo("/notes");
+
+    public void Dispose() => dotnetRef?.Dispose();
+}

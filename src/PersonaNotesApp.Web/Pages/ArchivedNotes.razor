@@ -1,0 +1,79 @@
+@page "/notes/archived"
+@attribute [Authorize]
+@inject NoteService NoteService
+@inject NavigationManager Nav
+
+<PageTitle>Archived — PersonaNotes</PageTitle>
+
+<div class="notes-header">
+    <h1>Archived Notes</h1>
+    <a class="btn btn-outline-secondary btn-sm" href="/notes">← Back to Notes</a>
+</div>
+
+@if (isLoading)
+{
+    <div class="loading-state"><span>Loading...</span></div>
+}
+else if (!notes.Any())
+{
+    <div class="empty-state">
+        <span class="empty-state-icon">📥</span>
+        <p>No archived notes.</p>
+    </div>
+}
+else
+{
+    <div class="notes-grid">
+        @foreach (var note in notes)
+        {
+            <div class="note-card" @onclick="() => OpenNote(note.Id)">
+                <div class="note-card-header">
+                    <h5>@note.Title</h5>
+                    <small>@note.UpdatedAt.ToLocalTime().ToString("dd MMM")</small>
+                </div>
+                <p class="note-preview">@GetPreview(note.Content)</p>
+                @if (note.Tags.Any())
+                {
+                    <div class="note-tags">
+                        @foreach (var tag in note.Tags)
+                        {
+                            <span class="tag-chip" style="background-color: @(tag.Color + "22"); color: @tag.Color">@tag.Name</span>
+                        }
+                    </div>
+                }
+                <div style="margin-top:.5rem">
+                    <button class="btn btn-sm btn-outline-primary" @onclick:stopPropagation="true"
+                            @onclick="() => RestoreNote(note.Id)">
+                        📤 Restore
+                    </button>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private List<NoteDto> notes = [];
+    private bool isLoading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        notes = await NoteService.GetArchivedNotesAsync();
+        isLoading = false;
+    }
+
+    private void OpenNote(Guid id) => Nav.NavigateTo($"/notes/{id}");
+
+    private async Task RestoreNote(Guid id)
+    {
+        await NoteService.ToggleArchiveAsync(id);
+        notes = await NoteService.GetArchivedNotesAsync();
+    }
+
+    private static string GetPreview(string content)
+    {
+        var plain = System.Text.RegularExpressions.Regex.Replace(content, @"[#*_`>\[\]!-]", "").Trim();
+        plain = System.Text.RegularExpressions.Regex.Replace(plain, @"\s+", " ");
+        return plain.Length > 120 ? plain[..120] + "…" : plain;
+    }
+}

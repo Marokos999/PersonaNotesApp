@@ -1,0 +1,36 @@
+# Build output
+**/bin/
+**/obj/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Rider
+.idea/
+
+# NuGet
+*.nupkg
+**/packages/
+!**/packages/build/
+
+# Secrets
+*.env
+.env*
+appsettings.Local.json
+appsettings.*.Local.json
+*secrets*.json
+
+# Docker volumes
+pgdata/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test results
+TestResults/
+coverage/
