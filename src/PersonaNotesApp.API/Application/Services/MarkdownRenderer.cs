@@ -12,6 +12,9 @@ public static class MarkdownRenderer
         .UseTaskLists()
         .Build();
 
+    /// <summary>Bump when rendering/sanitizing rules change; stored notes with an older version are re-rendered at startup.</summary>
+    public const int Version = 1;
+
     private static readonly ThreadLocal<HtmlSanitizer> Sanitizer = new(CreateSanitizer);
 
     public static string ToHtml(string markdown) =>

@@ -44,6 +44,7 @@ public class NotesModule : ICarterModule
                 Title = request.Title.Trim(),
                 ContentMarkdown = request.Content,
                 ContentHtml = MarkdownRenderer.ToHtml(request.Content),
+                RenderVersion = MarkdownRenderer.Version,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
@@ -64,6 +65,7 @@ public class NotesModule : ICarterModule
             note.Title = request.Title.Trim();
             note.ContentMarkdown = request.Content;
             note.ContentHtml = MarkdownRenderer.ToHtml(request.Content);
+            note.RenderVersion = MarkdownRenderer.Version;
             note.NoteTags.Clear();
 
             await AttachTagsAsync(note, request.Tags, userId, tagRepo);

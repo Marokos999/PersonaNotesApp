@@ -140,6 +140,9 @@ if (!isTesting)
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     await db.Database.MigrateAsync();
+    var refreshed = await NoteHtmlRefresher.RefreshAsync(db);
+    if (refreshed > 0)
+        app.Logger.LogInformation("Re-rendered {Count} notes with the current Markdown renderer", refreshed);
 }
 
 app.UseExceptionHandler();

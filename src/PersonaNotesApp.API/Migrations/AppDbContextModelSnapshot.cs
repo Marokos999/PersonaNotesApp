@@ -242,6 +242,9 @@ namespace PersonaNotesApp.API.Migrations
                     b.Property<bool>("IsPinned")
                         .HasColumnType("boolean");
 
+                    b.Property<int>("RenderVersion")
+                        .HasColumnType("integer");
+
                     b.Property<NpgsqlTsVector>("SearchVector")
                         .IsRequired()
                         .ValueGeneratedOnAddOrUpdate()
