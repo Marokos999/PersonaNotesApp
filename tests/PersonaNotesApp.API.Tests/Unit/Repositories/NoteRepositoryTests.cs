@@ -30,7 +30,7 @@ public class NoteRepositoryTests : IDisposable
 
     await context.SaveChangesAsync();
 
-    var result = await sut.GetAllNotesAsync();
+    var result = (await sut.GetAllNotesAsync("u1")).Items;
 
     result.Should().HaveCount(1);
     result.First().Title.Should().Be("Active");
@@ -43,7 +43,7 @@ public class NoteRepositoryTests : IDisposable
     context.Notes.Add(new Note { Id = id, UserId = "u1", Title = "Test Note", ContentMarkdown = "", ContentHtml = "", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
     await context.SaveChangesAsync();
 
-    var result = await sut.GetNoteByIdAsync(id);
+    var result = await sut.GetNoteByIdAsync(id, "u1");
 
     result.Should().NotBeNull();
     result!.Title.Should().Be("Test Note");
@@ -52,7 +52,7 @@ public class NoteRepositoryTests : IDisposable
   [Fact]
   public async Task GetNoteByIdAsync_ReturnsNull_WhenNoteDoesNotExist()
   {
-    var result = await sut.GetNoteByIdAsync(Guid.NewGuid());
+    var result = await sut.GetNoteByIdAsync(Guid.NewGuid(), "u1");
     result.Should().BeNull();
   }
 
@@ -82,16 +82,70 @@ public class NoteRepositoryTests : IDisposable
   }
 
   [Fact]
-  public async Task DeleteNoteAsync_SetsIsArchived()
+  public async Task DeleteNoteAsync_RemovesNote()
   {
     var id = Guid.NewGuid();
     context.Notes.Add(new Note { Id = id, UserId = "u1", Title = "ToDelete", ContentMarkdown = "", ContentHtml = "", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
     await context.SaveChangesAsync();
 
-    await sut.DeleteNoteAsync(id);
+    var deleted = await sut.DeleteNoteAsync(id, "u1");
 
-    var deletedNote = await context.Notes.FindAsync(id);
-    deletedNote!.IsArchived.Should().BeTrue();
+    deleted.Should().BeTrue();
+    (await context.Notes.FindAsync(id)).Should().BeNull();
+  }
+
+  [Fact]
+  public async Task DeleteNoteAsync_ReturnsFalse_AndKeepsNote_WhenUserMismatch()
+  {
+    var id = Guid.NewGuid();
+    context.Notes.Add(new Note { Id = id, UserId = "u1", Title = "Mine", ContentMarkdown = "", ContentHtml = "", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
+    await context.SaveChangesAsync();
+
+    var deleted = await sut.DeleteNoteAsync(id, "other-user");
+
+    deleted.Should().BeFalse();
+    (await context.Notes.FindAsync(id)).Should().NotBeNull();
+  }
+
+  [Fact]
+  public async Task GetAllNotesAsync_PaginatesAndReportsTotal()
+  {
+    for (var i = 0; i < 5; i++)
+      context.Notes.Add(new Note { Id = Guid.NewGuid(), UserId = "u1", Title = $"N{i}", ContentMarkdown = "", ContentHtml = "", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow.AddMinutes(-i) });
+    await context.SaveChangesAsync();
+
+    var page2 = await sut.GetAllNotesAsync("u1", page: 2, pageSize: 2);
+
+    page2.TotalCount.Should().Be(5);
+    page2.Items.Select(n => n.Title).Should().Equal("N2", "N3");
+  }
+
+  [Fact]
+  public async Task GetAllNotesAsync_ReturnsOnlyNotesOfRequestedUser()
+  {
+    context.Notes.AddRange(
+      new Note { Id = Guid.NewGuid(), UserId = "u1", Title = "Mine", ContentMarkdown = "", ContentHtml = "", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+      new Note { Id = Guid.NewGuid(), UserId = "u2", Title = "Theirs", ContentMarkdown = "", ContentHtml = "", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
+    await context.SaveChangesAsync();
+
+    var result = await sut.GetAllNotesAsync("u1");
+
+    result.Items.Should().ContainSingle().Which.Title.Should().Be("Mine");
+  }
+
+  [Fact]
+  public async Task SetNoteTagsAsync_IgnoresTagsOwnedByAnotherUser()
+  {
+    var noteId = Guid.NewGuid();
+    var mine = new Tag { Id = Guid.NewGuid(), UserId = "u1", Name = "Mine" };
+    var foreign = new Tag { Id = Guid.NewGuid(), UserId = "u2", Name = "Foreign" };
+    context.Tags.AddRange(mine, foreign);
+    context.Notes.Add(new Note { Id = noteId, UserId = "u1", Title = "T", ContentMarkdown = "", ContentHtml = "", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
+    await context.SaveChangesAsync();
+
+    var result = await sut.SetNoteTagsAsync(noteId, "u1", [mine.Id, foreign.Id]);
+
+    result!.NoteTags.Should().ContainSingle().Which.TagId.Should().Be(mine.Id);
   }
 
   [Fact]
@@ -222,7 +276,7 @@ public class NoteRepositoryTests : IDisposable
     );
     await context.SaveChangesAsync();
 
-    var result = (await sut.GetAllNotesAsync()).ToList();
+    var result = (await sut.GetAllNotesAsync("u1")).Items.ToList();
 
     result[0].Title.Should().Be("Pinned");
     result[1].Title.Should().Be("Regular");

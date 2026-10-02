@@ -90,6 +90,15 @@ else
             </div>
         }
     </div>
+
+    @if (notes.Count < totalCount)
+    {
+        <div class="text-center my-3">
+            <button class="btn btn-outline-secondary" @onclick="LoadMore" disabled="@isLoadingMore">
+                @(isLoadingMore ? "Loading..." : $"Load more ({notes.Count} of {totalCount})")
+            </button>
+        </div>
+    }
 }
 
 @code {
@@ -99,6 +108,9 @@ else
     private List<NoteDto> notes = [];
     private List<TagDto> tags = [];
     private bool isLoading = true;
+    private bool isLoadingMore;
+    private int currentPage = 1;
+    private int totalCount;
     private string? errorMessage;
     private bool showForm;
     private string? selectedTag;
@@ -123,15 +135,33 @@ else
     {
         isLoading = true;
         errorMessage = null;
+        currentPage = 1;
         try
         {
-            notes = await NoteService.GetAllNotesAsync(selectedTag, searchQuery);
+            (notes, totalCount) = await NoteService.GetNotesPageAsync(selectedTag, searchQuery, currentPage);
         }
         catch (Exception ex)
         {
             errorMessage = ex.Message;
         }
         isLoading = false;
+    }
+
+    private async Task LoadMore()
+    {
+        isLoadingMore = true;
+        try
+        {
+            var (items, total) = await NoteService.GetNotesPageAsync(selectedTag, searchQuery, currentPage + 1);
+            currentPage++;
+            notes.AddRange(items);
+            totalCount = total;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        isLoadingMore = false;
     }
 
     private async Task ApplyFilters() => await LoadNotes();
@@ -152,10 +182,15 @@ else
     private async Task SaveNote()
     {
         var tagList = formTags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
-        if (editingId.HasValue)
-            await NoteService.UpdateNoteAsync(editingId.Value, new UpdateNoteRequest { Title = formTitle, Content = formContent, Tags = tagList });
-        else
-            await NoteService.CreateNoteAsync(new CreateNoteRequest { Title = formTitle, Content = formContent, Tags = tagList });
+        var saved = editingId.HasValue
+            ? await NoteService.UpdateNoteAsync(editingId.Value, new UpdateNoteRequest { Title = formTitle, Content = formContent, Tags = tagList })
+            : await NoteService.CreateNoteAsync(new CreateNoteRequest { Title = formTitle, Content = formContent, Tags = tagList });
+
+        if (saved is null)
+        {
+            errorMessage = "Note could not be saved. A title (max 200 chars) is required.";
+            return;
+        }
 
         HideForm();
         tags = await TagService.GetAllTagsAsync();

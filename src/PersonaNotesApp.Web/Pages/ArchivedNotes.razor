@@ -2,6 +2,7 @@
 @attribute [Authorize]
 @inject NoteService NoteService
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 
 <PageTitle>Archived — PersonaNotes</PageTitle>
 
@@ -46,6 +47,10 @@ else
                             @onclick="() => RestoreNote(note.Id)">
                         📤 Restore
                     </button>
+                    <button class="btn btn-sm btn-outline-danger" @onclick:stopPropagation="true"
+                            @onclick="() => DeleteForever(note)">
+                        🗑 Delete permanently
+                    </button>
                 </div>
             </div>
         }
@@ -67,6 +72,15 @@ else
     private async Task RestoreNote(Guid id)
     {
         await NoteService.ToggleArchiveAsync(id);
+        notes = await NoteService.GetArchivedNotesAsync();
+    }
+
+    private async Task DeleteForever(NoteDto note)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", $"Permanently delete \"{note.Title}\"? This cannot be undone."))
+            return;
+
+        await NoteService.DeleteNoteAsync(note.Id);
         notes = await NoteService.GetArchivedNotesAsync();
     }
 

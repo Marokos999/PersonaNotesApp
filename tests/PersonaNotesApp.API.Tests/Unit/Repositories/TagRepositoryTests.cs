@@ -30,7 +30,7 @@ public class TagRepositoryTests : IDisposable
 
     await context.SaveChangesAsync();
 
-    var result = await sut.GetAllTagsAsync();
+    var result = (await sut.GetAllTagsAsync("u1")).ToList();
 
     result.Should().HaveCount(2);
   }
@@ -64,6 +64,53 @@ public class TagRepositoryTests : IDisposable
     context.Tags.Should().HaveCount(1);
   }
 
+  [Fact]
+  public async Task GetAllTagsAsync_ReturnsOnlyTagsOfUser_WithNonArchivedNoteCount()
+  {
+    var tag = new Tag { Id = Guid.NewGuid(), UserId = "u1", Name = "Work" };
+    var active = new Note { Id = Guid.NewGuid(), UserId = "u1", Title = "A", ContentMarkdown = "", ContentHtml = "", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow };
+    var archived = new Note { Id = Guid.NewGuid(), UserId = "u1", Title = "B", ContentMarkdown = "", ContentHtml = "", IsArchived = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow };
+    active.NoteTags.Add(new NoteTag { NoteId = active.Id, TagId = tag.Id });
+    archived.NoteTags.Add(new NoteTag { NoteId = archived.Id, TagId = tag.Id });
+    context.Tags.AddRange(tag, new Tag { Id = Guid.NewGuid(), UserId = "u2", Name = "Other" });
+    context.Notes.AddRange(active, archived);
+    await context.SaveChangesAsync();
+
+    var result = (await sut.GetAllTagsAsync("u1")).ToList();
+
+    result.Should().ContainSingle();
+    result[0].Tag.Name.Should().Be("Work");
+    result[0].NoteCount.Should().Be(1);
+  }
+
+  [Fact]
+  public async Task DeleteTagAsync_RemovesTagAndItsNoteLinks()
+  {
+    var tag = new Tag { Id = Guid.NewGuid(), UserId = "u1", Name = "Work" };
+    var note = new Note { Id = Guid.NewGuid(), UserId = "u1", Title = "A", ContentMarkdown = "", ContentHtml = "", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow };
+    note.NoteTags.Add(new NoteTag { NoteId = note.Id, TagId = tag.Id });
+    context.Tags.Add(tag);
+    context.Notes.Add(note);
+    await context.SaveChangesAsync();
+
+    var deleted = await sut.DeleteTagAsync(tag.Id, "u1");
+
+    deleted.Should().BeTrue();
+    context.Tags.Should().BeEmpty();
+    context.NoteTags.Should().BeEmpty();
+    context.Notes.Should().HaveCount(1);
+  }
+
+  [Fact]
+  public async Task DeleteTagAsync_ReturnsFalse_WhenUserMismatch()
+  {
+    var tag = new Tag { Id = Guid.NewGuid(), UserId = "u1", Name = "Work" };
+    context.Tags.Add(tag);
+    await context.SaveChangesAsync();
+
+    (await sut.DeleteTagAsync(tag.Id, "u2")).Should().BeFalse();
+    context.Tags.Should().HaveCount(1);
+  }
 
   public void Dispose() => context.Dispose();
 }

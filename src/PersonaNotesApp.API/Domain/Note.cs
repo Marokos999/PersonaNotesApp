@@ -1,3 +1,5 @@
+using NpgsqlTypes;
+
 namespace PersonaNotesApp.API.Domain;
 
 public class Note
@@ -11,5 +13,6 @@ public class Note
     public bool IsArchived { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+    public NpgsqlTsVector SearchVector { get; set; } = default!;   // generated column (PostgreSQL only)
     public ICollection<NoteTag> NoteTags { get; set; } = [];
 }

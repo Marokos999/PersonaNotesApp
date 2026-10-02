@@ -31,9 +31,26 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
         modelBuilder.Entity<Note>()
             .HasIndex(n => n.UserId);
 
+        // Full-text search is PostgreSQL-specific; other providers (in-memory tests) skip the column.
+        if (Database.IsNpgsql())
+        {
+            modelBuilder.Entity<Note>()
+                .HasGeneratedTsVectorColumn(n => n.SearchVector, "simple", n => new { n.Title, n.ContentMarkdown })
+                .HasIndex(n => n.SearchVector)
+                .HasMethod("GIN");
+        }
+        else
+        {
+            modelBuilder.Entity<Note>().Ignore(n => n.SearchVector);
+        }
+
         modelBuilder.Entity<Tag>()
             .HasIndex(t => new { t.UserId, t.Name })
             .IsUnique();
+
+        modelBuilder.Entity<RefreshToken>()
+                    .HasIndex(r => r.Token)
+                    .IsUnique();
 
         modelBuilder.Entity<RefreshToken>()
                     .HasOne(r => r.User)

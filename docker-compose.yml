@@ -1,3 +1,4 @@
+# Required variables live in .env (copy .env.example to .env and fill it in).
 services:
   api:
     build: .
@@ -7,8 +8,8 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: http://+:8080
-      ConnectionStrings__DefaultConnection: "Host=pna-db;Port=5432;Database=personanotes;Username=postgres;Password=postgres"
-      Jwt__Secret: "CHANGE-ME-32-CHARS-MINIMUM-SECRET-KEY"
+      ConnectionStrings__DefaultConnection: "Host=pna-db;Port=5432;Database=personanotes;Username=postgres;Password=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}"
+      Jwt__Secret: "${JWT_SECRET:?Set JWT_SECRET in .env (min 32 chars)}"
       Jwt__Issuer: PersonaNotesApp
       Jwt__Audience: PersonaNotesApp
       Jwt__AccessTokenExpiryMinutes: "15"
@@ -26,7 +27,7 @@ services:
     environment:
       POSTGRES_DB: personanotes
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     volumes:
       - pna-postgres-data:/var/lib/postgresql/data
     healthcheck:

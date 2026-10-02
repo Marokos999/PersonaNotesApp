@@ -1,23 +1,54 @@
+using System.Text;
+using System.Threading.RateLimiting;
+using Carter;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using OpenTelemetry;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 using PersonaNotesApp.API.Application.Interfaces;
+using PersonaNotesApp.API.Application.Services;
+using PersonaNotesApp.API.Domain;
 using PersonaNotesApp.API.Infrastructure;
 using PersonaNotesApp.API.Infrastructure.Repositories;
-using Carter;
-using PersonaNotesApp.API.Domain;
-using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.IdentityModel.Tokens;
-using System.Text;
-using PersonaNotesApp.API.Application.Services;
+using PersonaNotesApp.API.Modules;
+using Scalar.AspNetCore;
+using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
+var isTesting = builder.Environment.IsEnvironment("Testing");
 
-// Add services to the container.
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
+builder.Host.UseSerilog((context, services, logger) => logger
+    .ReadFrom.Configuration(context.Configuration)
+    .ReadFrom.Services(services)
+    .Enrich.FromLogContext()
+    .WriteTo.Console());
+
 builder.Services.AddOpenApi();
+builder.Services.AddProblemDetails();
 
-if (!builder.Environment.IsEnvironment("Testing"))
+var otel = builder.Services.AddOpenTelemetry()
+    .ConfigureResource(r => r.AddService("PersonaNotesApp.API"))
+    .WithTracing(t => t.AddAspNetCoreInstrumentation().AddHttpClientInstrumentation())
+    .WithMetrics(m => m.AddAspNetCoreInstrumentation().AddHttpClientInstrumentation().AddRuntimeInstrumentation());
+if (!string.IsNullOrWhiteSpace(builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]))
+    otel.UseOtlpExporter();
+
+if (!isTesting)
 {
+    var jwtSecret = builder.Configuration["Jwt:Secret"];
+    if (string.IsNullOrWhiteSpace(jwtSecret)
+        || jwtSecret.Length < 32
+        || jwtSecret.StartsWith("CHANGE-ME", StringComparison.OrdinalIgnoreCase))
+    {
+        throw new InvalidOperationException(
+            "Jwt:Secret is missing, too short (min 32 chars) or still a placeholder. " +
+            "Set the Jwt__Secret environment variable (see .env.example).");
+    }
+
     builder.Services.AddDbContext<AppDbContext>(options =>
         options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
@@ -40,8 +71,7 @@ if (!builder.Environment.IsEnvironment("Testing"))
             ValidateIssuerSigningKey = true,
             ValidIssuer = builder.Configuration["Jwt:Issuer"],
             ValidAudience = builder.Configuration["Jwt:Audience"],
-            IssuerSigningKey = new SymmetricSecurityKey(
-                Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Secret"]!))
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret))
         };
     });
 
@@ -52,36 +82,55 @@ builder.Services.AddAuthorization();
 builder.Services.AddScoped<INoteRepository, NoteRepository>();
 builder.Services.AddScoped<ITagRepository, TagRepository>();
 builder.Services.AddCarter();
+builder.Services.AddHealthChecks().AddDbContextCheck<AppDbContext>();
 
+// The Blazor client is normally served from this same origin, so CORS is only needed
+// when the API is called from another origin (e.g. `dotnet watch` on a different port).
+var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("BlazorPolicy", policy =>
     {
-        if (builder.Environment.IsDevelopment())
-            policy.WithOrigins("http://localhost:5047", "https://localhost:7010")
+        if (allowedOrigins.Length > 0)
+            policy.WithOrigins(allowedOrigins)
                   .AllowAnyHeader()
-                  .AllowAnyMethod();
-        else
-            policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
+                  .AllowAnyMethod()
+                  .WithExposedHeaders("X-Total-Count");
     });
 });
 
-
+// Brute-force protection for /api/auth/*; partitioned per client IP.
+var authPermitLimit = isTesting ? int.MaxValue : builder.Configuration.GetValue("RateLimiting:AuthPermitLimit", 10);
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy(AuthModule.RateLimitPolicy, httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = authPermitLimit,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            }));
+});
 
 var app = builder.Build();
 
-if (!app.Environment.IsEnvironment("Testing"))
+if (!isTesting)
 {
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    db.Database.Migrate();
-    await DataSeeder.SeedAsync(db);
+    await db.Database.MigrateAsync();
 }
 
-// Configure the HTTP request pipeline.
+app.UseExceptionHandler();
+app.UseSerilogRequestLogging();
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+    app.MapScalarApiReference();
 }
 
 var mimeProvider = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();
@@ -95,9 +144,11 @@ app.UseStaticFiles(new StaticFileOptions
             ctx.Context.Response.Headers["Blazor-Environment"] = app.Environment.EnvironmentName;
     }
 });
+app.UseCors("BlazorPolicy");
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
-app.UseCors("BlazorPolicy");
+app.MapHealthChecks("/health");
 app.MapCarter();
 app.MapFallbackToFile("index.html");
 app.Run();

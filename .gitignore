@@ -34,3 +34,6 @@ Thumbs.db
 # Test results
 TestResults/
 coverage/
+
+# but keep the template
+!.env.example

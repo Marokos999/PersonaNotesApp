@@ -2,6 +2,7 @@
 @inject NavigationManager Nav
 @inject JwtAuthProvider Auth
 @inject HttpClient Http
+@inject LocalStorageService Storage
 
 <a class="sidebar-brand" href="/notes">
     <span class="brand-icon">📝</span>
@@ -30,6 +31,7 @@
                     @onclick="() => NavigateToTag(tag.Name)">
                 <span class="tag-dot" style="background: @tag.Color"></span>
                 <span>@tag.Name</span>
+                <span class="tag-count">@tag.NoteCount</span>
             </button>
         }
     }
@@ -82,7 +84,9 @@
 
     private async Task DoLogout()
     {
-        await Http.PostAsync("/api/auth/logout", null);
+        var refreshToken = await Storage.GetItemAsync(JwtAuthProvider.RefreshTokenKey);
+        if (!string.IsNullOrEmpty(refreshToken))
+            await Http.PostAsJsonAsync("/api/auth/logout", new RefreshRequest { RefreshToken = refreshToken });
         await Auth.NotifyLogoutAsync();
         Nav.NavigateTo("/login");
     }

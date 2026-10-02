@@ -20,7 +20,11 @@ var apiBaseUrl = !string.IsNullOrEmpty(apiBaseUrlStr) && Uri.IsWellFormedUriStri
     ? apiBaseUrlStr
     : builder.HostEnvironment.BaseAddress;
 
+builder.Services.AddScoped<TokenRefresher>();
 builder.Services.AddScoped<AuthorizedHttpHandler>();
+// Plain client (no auth handler) used only to call /api/auth/refresh.
+builder.Services.AddHttpClient(TokenRefresher.ClientName, client =>
+    client.BaseAddress = new Uri(apiBaseUrl));
 builder.Services.AddHttpClient("API", client =>
     client.BaseAddress = new Uri(apiBaseUrl))
     .AddHttpMessageHandler<AuthorizedHttpHandler>();

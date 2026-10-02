@@ -100,7 +100,7 @@ public class NotesEndpointTests : IDisposable
     }
 
     [Fact]
-    public async Task DeleteNote_ReturnsNoContent_AndNoteIsArchived()
+    public async Task DeleteNote_ReturnsNoContent_AndNoteIsGone()
     {
         var created = await CreateTestNote("To Delete");
 

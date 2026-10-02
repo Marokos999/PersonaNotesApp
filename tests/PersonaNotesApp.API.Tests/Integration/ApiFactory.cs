@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -17,10 +18,28 @@ namespace PersonaNotesApp.API.Tests.Integration;
 public class ApiFactory : WebApplicationFactory<Program>
 {
     public const string TestUserId = "test-user-id";
+    public const string UserHeader = "X-Test-User";
+
+    /// <summary>Creates a client whose requests are authenticated as the given user.</summary>
+    public HttpClient CreateClientAs(string userId)
+    {
+        var client = CreateClient();
+        client.DefaultRequestHeaders.Add(UserHeader, userId);
+        return client;
+    }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
+
+        builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Jwt:Secret"] = "integration-test-secret-key-0123456789-abcdef",
+            ["Jwt:Issuer"] = "PersonaNotesApp.Tests",
+            ["Jwt:Audience"] = "PersonaNotesApp.Tests",
+            ["Jwt:AccessTokenExpiryMinutes"] = "15",
+            ["Jwt:RefreshTokenExpiryDays"] = "30"
+        }));
 
         builder.ConfigureServices(services =>
         {
@@ -56,7 +75,7 @@ public class TestAuthHandler(
     {
         var claims = new[]
         {
-            new Claim(ClaimTypes.NameIdentifier, ApiFactory.TestUserId),
+            new Claim(ClaimTypes.NameIdentifier, Request.Headers.TryGetValue(ApiFactory.UserHeader, out var user) ? user.ToString() : ApiFactory.TestUserId),
             new Claim(ClaimTypes.Email, "test@test.com")
         };
         var identity = new ClaimsIdentity(claims, "Test");

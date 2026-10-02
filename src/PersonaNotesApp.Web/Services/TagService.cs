@@ -13,4 +13,16 @@ public class TagService(HttpClient http)
         var response = await http.PostAsJsonAsync("api/tags", new { name, color });
         return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<TagDto>() : null;
     }
+
+    public async Task<TagDto?> UpdateTagAsync(Guid id, string name, string color)
+    {
+        var response = await http.PutAsJsonAsync($"api/tags/{id}", new { name, color });
+        return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<TagDto>() : null;
+    }
+
+    public async Task<bool> DeleteTagAsync(Guid id)
+    {
+        var response = await http.DeleteAsync($"api/tags/{id}");
+        return response.IsSuccessStatusCode;
+    }
 }

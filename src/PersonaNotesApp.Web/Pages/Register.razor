@@ -72,12 +72,37 @@
 
         if (!response.IsSuccessStatusCode)
         {
-            errorMessage = "Registracija neuspješna. Lozinka mora imati min. 6 znakova, jedno veliko slovo i jedan broj.";
+            errorMessage = response.StatusCode switch
+            {
+                System.Net.HttpStatusCode.Conflict => "Email je već registrovan.",
+                System.Net.HttpStatusCode.TooManyRequests => "Previše pokušaja. Pokušaj ponovo za minut.",
+                _ => await ReadValidationErrorsAsync(response)
+            };
             isLoading = false;
             return;
         }
 
         success = true;
         isLoading = false;
+    }
+
+    private static async Task<string> ReadValidationErrorsAsync(HttpResponseMessage response)
+    {
+        const string fallback = "Registracija neuspješna. Lozinka mora imati min. 8 znakova, malo i veliko slovo, broj i poseban znak.";
+        try
+        {
+            using var doc = await System.Text.Json.JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+            if (!doc.RootElement.TryGetProperty("errors", out var errors)) return fallback;
+
+            var messages = errors.EnumerateObject()
+                .SelectMany(p => p.Value.EnumerateArray().Select(m => m.GetString()))
+                .Where(m => !string.IsNullOrEmpty(m));
+            var joined = string.Join(" ", messages);
+            return joined.Length > 0 ? joined : fallback;
+        }
+        catch
+        {
+            return fallback;
+        }
     }
 }

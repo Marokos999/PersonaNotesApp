@@ -5,13 +5,23 @@ namespace PersonaNotesApp.Web.Services;
 
 public class NoteService(HttpClient http)
 {
-    public async Task<List<NoteDto>> GetAllNotesAsync(string? tag = null, string? search = null)
+    public const int PageSize = 20;
+
+    public async Task<(List<NoteDto> Items, int Total)> GetNotesPageAsync(string? tag, string? search, int page)
     {
-        var query = new List<string>();
+        var query = new List<string> { $"page={page}", $"pageSize={PageSize}" };
         if (!string.IsNullOrEmpty(tag)) query.Add($"tag={Uri.EscapeDataString(tag)}");
         if (!string.IsNullOrEmpty(search)) query.Add($"search={Uri.EscapeDataString(search)}");
-        var url = query.Count > 0 ? $"api/notes?{string.Join("&", query)}" : "api/notes";
-        return await http.GetFromJsonAsync<List<NoteDto>>(url) ?? [];
+
+        var response = await http.GetAsync($"api/notes?{string.Join("&", query)}");
+        response.EnsureSuccessStatusCode();
+
+        var items = await response.Content.ReadFromJsonAsync<List<NoteDto>>() ?? [];
+        var total = response.Headers.TryGetValues("X-Total-Count", out var values)
+                    && int.TryParse(values.FirstOrDefault(), out var parsed)
+            ? parsed
+            : items.Count;
+        return (items, total);
     }
 
     public async Task<List<NoteDto>> GetArchivedNotesAsync() =>

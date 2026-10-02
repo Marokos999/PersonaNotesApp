@@ -1,6 +1,9 @@
 using Carter;
-using Markdig;
+using PersonaNotesApp.API.Application.Extensions;
 using PersonaNotesApp.API.Application.Interfaces;
+using PersonaNotesApp.API.Application.Mappings;
+using PersonaNotesApp.API.Application.Services;
+using PersonaNotesApp.API.Application.Validation;
 using PersonaNotesApp.API.Domain;
 using PersonaNotesApp.Shared.DTOs;
 using System.Security.Claims;
@@ -9,127 +12,108 @@ namespace PersonaNotesApp.API.Modules;
 
 public class NotesModule : ICarterModule
 {
-    private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder()
-        .UseAdvancedExtensions()
-        .UseTaskLists()
-        .Build();
+  public const int DefaultPageSize = 20;
+  public const int MaxPageSize = 100;
 
   public void AddRoutes(IEndpointRouteBuilder app)
   {
     var notesGroup = app.MapGroup("/api/notes").RequireAuthorization();
 
-    notesGroup.MapGet("/", async (INoteRepository repo, HttpContext httpContext, string? tag, string? search) =>
+    notesGroup.MapGet("/", async (INoteRepository repo, ClaimsPrincipal user, HttpResponse response,
+        string? tag, string? search, int? page, int? pageSize) =>
         {
-            var userId = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-            var notes = await repo.GetAllNotesAsync(tag, search, userId);
-            return Results.Ok(notes.Select(MapToDto));
+            var size = Math.Clamp(pageSize ?? DefaultPageSize, 1, MaxPageSize);
+            var result = await repo.GetAllNotesAsync(user.GetUserId(), tag, search, Math.Max(page ?? 1, 1), size);
+            response.Headers["X-Total-Count"] = result.TotalCount.ToString();
+            return Results.Ok(result.Items.Select(n => n.ToDto()));
         });
 
-    notesGroup.MapGet("/{id:guid}", async (INoteRepository repo, Guid id, HttpContext httpContext) =>
+    notesGroup.MapGet("/{id:guid}", async (INoteRepository repo, Guid id, ClaimsPrincipal user) =>
         {
-            var userId = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-            var note = await repo.GetNoteByIdAsync(id, userId);
-            return note is null ? Results.NotFound() : Results.Ok(MapToDto(note));
+            var note = await repo.GetNoteByIdAsync(id, user.GetUserId());
+            return note is null ? Results.NotFound() : Results.Ok(note.ToDto());
         });
-    notesGroup.MapPost("/", async (INoteRepository repo, CreateNoteRequest request, ITagRepository tagRepo, HttpContext httpContext) =>
+
+    notesGroup.MapPost("/", async (INoteRepository repo, CreateNoteRequest request, ITagRepository tagRepo, ClaimsPrincipal user) =>
         {
-            var userId = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier);
+            var userId = user.GetUserId();
             var note = new Note
             {
                 Id = Guid.NewGuid(),
-                UserId = userId!,
-                Title = request.Title,
+                UserId = userId,
+                Title = request.Title.Trim(),
                 ContentMarkdown = request.Content,
-                ContentHtml = Markdown.ToHtml(request.Content, Pipeline),
+                ContentHtml = MarkdownRenderer.ToHtml(request.Content),
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
 
-            foreach (var tagName in request.Tags)
-            {
-                var tag = await tagRepo.GetTagByNameAsync(tagName, userId!)
-                    ?? await tagRepo.CreateTagAsync(new Tag { Id = Guid.NewGuid(), UserId = userId!, Name = tagName, Color = "#6B7280" });
-                note.NoteTags.Add(new NoteTag { NoteId = note.Id, TagId = tag.Id });
-            }
+            await AttachTagsAsync(note, request.Tags, userId, tagRepo);
 
             var createdNote = await repo.CreateNoteAsync(note);
-            return Results.Created($"/api/notes/{createdNote.Id}", MapToDto(createdNote));
-        });
-    notesGroup.MapPut("/{id:guid}", async (Guid id, UpdateNoteRequest request, INoteRepository repo, ITagRepository tagRepo, HttpContext httpContext) =>
+            return Results.Created($"/api/notes/{createdNote.Id}", createdNote.ToDto());
+        })
+        .WithValidation<CreateNoteRequest>();
+
+    notesGroup.MapPut("/{id:guid}", async (Guid id, UpdateNoteRequest request, INoteRepository repo, ITagRepository tagRepo, ClaimsPrincipal user) =>
         {
-            var userId = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var userId = user.GetUserId();
             var note = await repo.GetNoteByIdAsync(id, userId);
             if (note is null) return Results.NotFound();
 
-            note.Title = request.Title;
+            note.Title = request.Title.Trim();
             note.ContentMarkdown = request.Content;
-            note.ContentHtml = Markdown.ToHtml(request.Content, Pipeline);
+            note.ContentHtml = MarkdownRenderer.ToHtml(request.Content);
             note.NoteTags.Clear();
 
-            foreach (var tagName in request.Tags)
-            {
-                var tag = await tagRepo.GetTagByNameAsync(tagName, userId!)
-                          ?? await tagRepo.CreateTagAsync(new Tag { Id = Guid.NewGuid(), UserId = userId!, Name = tagName });
-                note.NoteTags.Add(new NoteTag { NoteId = note.Id, TagId = tag.Id });
-            }
+            await AttachTagsAsync(note, request.Tags, userId, tagRepo);
 
             var updated = await repo.UpdateNoteAsync(note);
-            return Results.Ok(MapToDto(updated!));
-        });
+            return Results.Ok(updated!.ToDto());
+        })
+        .WithValidation<UpdateNoteRequest>();
 
-        notesGroup.MapDelete("/{id:guid}", async (Guid id, INoteRepository repo, HttpContext httpContext) =>
-        {
-           var userId = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-           var note = await repo.GetNoteByIdAsync(id, userId);
-           if (note is null) return Results.NotFound();
-           await repo.DeleteNoteAsync(id);
-           return Results.NoContent();
-        });
+    // Permanently deletes the note (archive is a separate toggle).
+    notesGroup.MapDelete("/{id:guid}", async (Guid id, INoteRepository repo, ClaimsPrincipal user) =>
+        await repo.DeleteNoteAsync(id, user.GetUserId()) ? Results.NoContent() : Results.NotFound());
 
-        notesGroup.MapPatch("/{id:guid}/pin", async (Guid id, INoteRepository repo, HttpContext httpContext) =>
+    notesGroup.MapPatch("/{id:guid}/pin", async (Guid id, INoteRepository repo, ClaimsPrincipal user) =>
         {
-            var userId = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-            var note = await repo.TogglePinAsync(id, userId);
+            var note = await repo.TogglePinAsync(id, user.GetUserId());
             return note is null ? Results.NotFound() : Results.Ok(new { note.IsPinned });
         });
 
-        notesGroup.MapPatch("/{id:guid}/archive", async (Guid id, INoteRepository repo, HttpContext httpContext) =>
+    notesGroup.MapPatch("/{id:guid}/archive", async (Guid id, INoteRepository repo, ClaimsPrincipal user) =>
         {
-            var userId = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-            var note = await repo.ToggleArchiveAsync(id, userId);
+            var note = await repo.ToggleArchiveAsync(id, user.GetUserId());
             return note is null ? Results.NotFound() : Results.Ok(new { note.IsArchived });
         });
 
-        notesGroup.MapGet("/archived", async (INoteRepository repo, HttpContext httpContext) =>
+    notesGroup.MapGet("/archived", async (INoteRepository repo, ClaimsPrincipal user) =>
         {
-            var userId = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-            var notes = await repo.GetArchivedNotesAsync(userId);
-            return Results.Ok(notes.Select(MapToDto));
+            var notes = await repo.GetArchivedNotesAsync(user.GetUserId());
+            return Results.Ok(notes.Select(n => n.ToDto()));
         });
 
-        notesGroup.MapPatch("/{id:guid}/tags", async (Guid id, SetNoteTagsRequest request, INoteRepository repo, HttpContext httpContext) =>
+    notesGroup.MapPatch("/{id:guid}/tags", async (Guid id, SetNoteTagsRequest request, INoteRepository repo, ClaimsPrincipal user) =>
         {
-            var userId = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-            var note = await repo.SetNoteTagsAsync(id, userId, request.TagIds);
-            return note is null ? Results.NotFound() : Results.Ok(MapToDto(note));
+            var note = await repo.SetNoteTagsAsync(id, user.GetUserId(), request.TagIds);
+            return note is null ? Results.NotFound() : Results.Ok(note.ToDto());
         });
-    }
+  }
 
- private static NoteDto MapToDto(Note note) => new()
+  private static async Task AttachTagsAsync(Note note, IEnumerable<string> tagNames, string userId, ITagRepository tagRepo)
+  {
+    var names = tagNames
+      .Select(n => n?.Trim() ?? string.Empty)
+      .Where(n => n.Length > 0)
+      .Distinct();
+
+    foreach (var name in names)
     {
-        Id = note.Id,
-        Title = note.Title,
-        Content = note.ContentMarkdown,
-        ContentHtml = note.ContentHtml,
-        IsPinned = note.IsPinned,
-        IsArchived = note.IsArchived,
-        CreatedAt = note.CreatedAt,
-        UpdatedAt = note.UpdatedAt,
-        Tags = note.NoteTags?.Select(nt => new TagDto
-        {
-            Id = nt.Tag?.Id ?? Guid.Empty,
-            Name = nt.Tag?.Name ?? string.Empty,
-            Color = nt.Tag?.Color ?? "#6B7280"
-        }).ToList() ?? []
-    };
+      var tag = await tagRepo.GetTagByNameAsync(name, userId)
+                ?? await tagRepo.CreateTagAsync(new Tag { Id = Guid.NewGuid(), UserId = userId, Name = name, Color = "#6B7280" });
+      note.NoteTags.Add(new NoteTag { NoteId = note.Id, TagId = tag.Id, Tag = tag });
+    }
+  }
 }

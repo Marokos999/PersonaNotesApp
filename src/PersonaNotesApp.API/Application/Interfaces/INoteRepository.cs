@@ -2,13 +2,15 @@ using PersonaNotesApp.API.Domain;
 
 namespace PersonaNotesApp.API.Application.Interfaces;
 
+public record PagedResult<T>(IReadOnlyList<T> Items, int TotalCount);
+
 public interface INoteRepository
 {
-  Task<IEnumerable<Note>> GetAllNotesAsync(string? tag = null, string? search = null, string? userId = null);
-  Task<Note?> GetNoteByIdAsync(Guid id, string? userId = null);
+  Task<PagedResult<Note>> GetAllNotesAsync(string userId, string? tag = null, string? search = null, int page = 1, int pageSize = 20);
+  Task<Note?> GetNoteByIdAsync(Guid id, string userId);
   Task<Note> CreateNoteAsync(Note note);
   Task<Note?> UpdateNoteAsync(Note note);
-  Task<bool> DeleteNoteAsync(Guid id);
+  Task<bool> DeleteNoteAsync(Guid id, string userId);
   Task<Note?> TogglePinAsync(Guid id, string userId);
   Task<Note?> ToggleArchiveAsync(Guid id, string userId);
   Task<IEnumerable<Note>> GetArchivedNotesAsync(string userId);

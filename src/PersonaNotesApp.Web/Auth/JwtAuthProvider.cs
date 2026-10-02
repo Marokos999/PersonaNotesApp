@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Components.Authorization;
 
 namespace PersonaNotesApp.Web.Auth;
 
-public class JwtAuthProvider(LocalStorageService storage) : AuthenticationStateProvider
+public class JwtAuthProvider(LocalStorageService storage, TokenRefresher refresher) : AuthenticationStateProvider
 {
     public const string AccessTokenKey = "access_token";
     public const string RefreshTokenKey = "refresh_token";
@@ -20,7 +20,13 @@ public class JwtAuthProvider(LocalStorageService storage) : AuthenticationStateP
             var handler = new JwtSecurityTokenHandler();
             var jwt = handler.ReadJwtToken(token);
             if (jwt.ValidTo < DateTime.UtcNow)
-                return new AuthenticationState(new ClaimsPrincipal());
+            {
+                // Access token expired (e.g. tab was closed for a while): try to renew it silently.
+                var renewed = await refresher.RefreshAsync(token);
+                if (renewed is null)
+                    return new AuthenticationState(new ClaimsPrincipal());
+                jwt = handler.ReadJwtToken(renewed);
+            }
             var identity = new ClaimsIdentity(jwt.Claims, "jwt");
             return new AuthenticationState(new ClaimsPrincipal(identity));
         }

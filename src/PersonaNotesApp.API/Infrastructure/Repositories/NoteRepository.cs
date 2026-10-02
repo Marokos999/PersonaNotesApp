@@ -13,46 +13,54 @@ public class NoteRepository(AppDbContext context) : INoteRepository
     return note;
   }
 
-  public async Task<bool> DeleteNoteAsync(Guid id)
+  public async Task<bool> DeleteNoteAsync(Guid id, string userId)
   {
-    var note = await context.Notes.FindAsync(id);
+    var note = await context.Notes
+      .Include(n => n.NoteTags)
+      .FirstOrDefaultAsync(n => n.Id == id && n.UserId == userId);
     if (note is null) return false;
-    note.IsArchived = true;
-    note.UpdatedAt = DateTime.UtcNow;
-    context.Notes.Update(note);
+
+    context.Notes.Remove(note);
     await context.SaveChangesAsync();
     return true;
   }
 
-  public async Task<IEnumerable<Note>> GetAllNotesAsync(string? tag = null, string? search = null, string? userId = null)
+  public async Task<PagedResult<Note>> GetAllNotesAsync(
+    string userId, string? tag = null, string? search = null, int page = 1, int pageSize = 20)
   {
     var query = context.Notes
-                .Include(n => n.NoteTags)
-                .ThenInclude(nt => nt.Tag)
-                .Where(n => !n.IsArchived)
-                .AsQueryable();
-
-    if (!string.IsNullOrWhiteSpace(userId))
-      query = query.Where(n => n.UserId == userId);
+                .AsNoTracking()
+                .Where(n => !n.IsArchived && n.UserId == userId);
 
     if (!string.IsNullOrWhiteSpace(tag))
       query = query.Where(n => n.NoteTags.Any(nt => nt.Tag.Name == tag));
 
     if (!string.IsNullOrWhiteSpace(search))
-      query = query.Where(n => n.Title.Contains(search) || n.ContentMarkdown.Contains(search));
+    {
+      query = context.Database.IsNpgsql()
+        ? query.Where(n => n.SearchVector.Matches(EF.Functions.WebSearchToTsQuery("simple", search)))
+        : query.Where(n => n.Title.Contains(search) || n.ContentMarkdown.Contains(search));
+    }
 
-    return await query
+    var total = await query.CountAsync();
+
+    var items = await query
+                .Include(n => n.NoteTags)
+                .ThenInclude(nt => nt.Tag)
                 .OrderByDescending(n => n.IsPinned)
                 .ThenByDescending(n => n.UpdatedAt)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
                 .ToListAsync();
+
+    return new PagedResult<Note>(items, total);
   }
 
-  public async Task<Note?> GetNoteByIdAsync(Guid id, string? userId = null) =>
+  public async Task<Note?> GetNoteByIdAsync(Guid id, string userId) =>
    await context.Notes
                 .Include(n => n.NoteTags)
                 .ThenInclude(nt => nt.Tag)
-                .FirstOrDefaultAsync(n => n.Id == id &&
-                    (userId == null || n.UserId == userId));
+                .FirstOrDefaultAsync(n => n.Id == id && n.UserId == userId);
 
   public async Task<Note?> UpdateNoteAsync(Note note)
   {
@@ -96,8 +104,15 @@ public class NoteRepository(AppDbContext context) : INoteRepository
       .FirstOrDefaultAsync(n => n.Id == id && n.UserId == userId);
     if (note is null) return null;
 
+    // Only tags owned by the same user may be attached.
+    var requested = tagIds.Distinct().ToList();
+    var ownedTagIds = await context.Tags
+      .Where(t => t.UserId == userId && requested.Contains(t.Id))
+      .Select(t => t.Id)
+      .ToListAsync();
+
     note.NoteTags.Clear();
-    foreach (var tagId in tagIds)
+    foreach (var tagId in ownedTagIds)
       note.NoteTags.Add(new NoteTag { NoteId = id, TagId = tagId });
 
     note.UpdatedAt = DateTime.UtcNow;

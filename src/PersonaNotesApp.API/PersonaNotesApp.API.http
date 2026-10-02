@@ -1,6 +1,39 @@
-@PersonaNotesApp.API_HostAddress = http://localhost:5203
+@host = http://localhost:5203
+@accessToken = paste-access-token-here
+@refreshToken = paste-refresh-token-here
 
-GET {{PersonaNotesApp.API_HostAddress}}/weatherforecast/
-Accept: application/json
+### Health
+GET {{host}}/health
 
-###
+### Register
+POST {{host}}/api/auth/register
+Content-Type: application/json
+
+{ "email": "demo@example.com", "password": "Demo1234!" }
+
+### Login
+POST {{host}}/api/auth/login
+Content-Type: application/json
+
+{ "email": "demo@example.com", "password": "Demo1234!" }
+
+### Refresh
+POST {{host}}/api/auth/refresh
+Content-Type: application/json
+
+{ "refreshToken": "{{refreshToken}}" }
+
+### List notes (page 1, 20 per page; supports tag= and search=)
+GET {{host}}/api/notes?page=1&pageSize=20
+Authorization: Bearer {{accessToken}}
+
+### Create note
+POST {{host}}/api/notes
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "title": "Hello", "content": "# Hi\n- [ ] task", "tags": ["Work"] }
+
+### List tags
+GET {{host}}/api/tags
+Authorization: Bearer {{accessToken}}
