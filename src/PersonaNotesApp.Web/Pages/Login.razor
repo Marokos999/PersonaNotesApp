@@ -21,11 +21,11 @@
     <div class="auth-form">
         <div class="auth-field">
             <label class="auth-label">Email adresa</label>
-            <input class="form-control" placeholder="you@example.com" @bind="email" type="email" />
+            <input class="form-control" placeholder="you@example.com" @bind="email" @bind:event="oninput" type="email" />
         </div>
         <div class="auth-field">
             <label class="auth-label">Lozinka</label>
-            <input class="form-control" placeholder="••••••••" @bind="password" type="password"
+            <input class="form-control" placeholder="••••••••" @bind="password" @bind:event="oninput" type="password"
                    @onkeydown="OnKeyDown" />
         </div>
         <button class="btn btn-primary auth-submit" @onclick="DoLogin" disabled="@isLoading">

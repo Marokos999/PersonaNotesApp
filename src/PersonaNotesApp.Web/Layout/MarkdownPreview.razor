@@ -1,0 +1,37 @@
+@using Markdig
+
+<div class="markdown-preview-wrap">
+    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => show = !show">
+        @(show ? "Hide preview" : "Show preview")
+    </button>
+
+    @if (show)
+    {
+        <div class="note-content markdown-preview">
+            @if (string.IsNullOrWhiteSpace(Content))
+            {
+                <span class="text-muted">Nothing to preview yet.</span>
+            }
+            else
+            {
+                @((MarkupString)Render(Content))
+            }
+        </div>
+    }
+</div>
+
+@code {
+    // Raw HTML is disabled: the preview only has to show what Markdown formatting will look like.
+    // The server renders and sanitizes the saved note.
+    private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder()
+        .UseAdvancedExtensions()
+        .UseTaskLists()
+        .DisableHtml()
+        .Build();
+
+    private bool show;
+
+    [Parameter] public string Content { get; set; } = "";
+
+    private static string Render(string markdown) => Markdown.ToHtml(markdown, Pipeline);
+}

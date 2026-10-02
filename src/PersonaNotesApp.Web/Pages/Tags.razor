@@ -1,0 +1,106 @@
+@page "/tags"
+@attribute [Authorize]
+@inject TagService TagService
+@inject IJSRuntime JS
+
+<PageTitle>Tags — PersonaNotes</PageTitle>
+
+<div class="notes-header">
+    <h1>Tags</h1>
+    <a class="btn btn-outline-secondary btn-sm" href="/notes">← Back to Notes</a>
+</div>
+
+@if (errorMessage is not null)
+{
+    <div class="auth-error">@errorMessage</div>
+}
+
+<div class="note-form-card tag-row">
+    <input type="color" class="tag-color-input" @bind="newColor" aria-label="New tag color" />
+    <input class="form-control" placeholder="New tag name" maxlength="@TagDto.MaxNameLength"
+           @bind="newName" @bind:event="oninput" @onkeydown="OnNewKeyDown" />
+    <button class="btn btn-primary" @onclick="CreateTag">Add</button>
+</div>
+
+@if (isLoading)
+{
+    <div class="loading-state"><span>Loading...</span></div>
+}
+else if (!tags.Any())
+{
+    <div class="empty-state">
+        <span class="empty-state-icon">🏷️</span>
+        <p>No tags yet.</p>
+    </div>
+}
+else
+{
+    @foreach (var tag in tags)
+    {
+        <div class="note-form-card tag-row" @key="tag.Id">
+            <input type="color" class="tag-color-input" @bind="tag.Color" aria-label="Color of @tag.Name" />
+            <input class="form-control" maxlength="@TagDto.MaxNameLength" @bind="tag.Name" aria-label="Name of @tag.Name" />
+            <span class="tag-count-label">@tag.NoteCount @(tag.NoteCount == 1 ? "note" : "notes")</span>
+            <button class="btn btn-outline-primary btn-sm" @onclick="() => Save(tag)">Save</button>
+            <button class="btn btn-outline-danger btn-sm" @onclick="() => Delete(tag)">Delete</button>
+        </div>
+    }
+}
+
+@code {
+    private List<TagDto> tags = [];
+    private bool isLoading = true;
+    private string? errorMessage;
+    private string newName = "";
+    private string newColor = "#6b7280";
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        tags = await TagService.GetAllTagsAsync();
+        isLoading = false;
+    }
+
+    private async Task OnNewKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await CreateTag();
+    }
+
+    private async Task CreateTag()
+    {
+        errorMessage = null;
+        if (string.IsNullOrWhiteSpace(newName)) return;
+
+        if (await TagService.CreateTagAsync(newName.Trim(), newColor.ToUpperInvariant()) is null)
+        {
+            errorMessage = "Tag could not be created. Names must be unique.";
+            return;
+        }
+
+        newName = "";
+        await Load();
+    }
+
+    private async Task Save(TagDto tag)
+    {
+        errorMessage = null;
+        if (await TagService.UpdateTagAsync(tag.Id, tag.Name.Trim(), tag.Color.ToUpperInvariant()) is null)
+        {
+            errorMessage = "Tag could not be saved. Names must be unique and not empty.";
+            await Load();
+        }
+    }
+
+    private async Task Delete(TagDto tag)
+    {
+        var message = $"Delete tag \"{tag.Name}\"? It will be removed from {tag.NoteCount} note(s); the notes themselves are kept.";
+        if (!await JS.InvokeAsync<bool>("confirm", message)) return;
+
+        errorMessage = null;
+        if (await TagService.DeleteTagAsync(tag.Id))
+            await Load();
+        else
+            errorMessage = "Tag could not be deleted.";
+    }
+}

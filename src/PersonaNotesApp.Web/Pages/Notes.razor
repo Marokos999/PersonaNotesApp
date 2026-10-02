@@ -39,7 +39,8 @@
     <div class="note-form-card">
         <h4>@(editingId.HasValue ? "Edit Note" : "New Note")</h4>
         <input class="form-control mb-2" placeholder="Title" @bind="formTitle" />
-        <textarea class="form-control mb-2" rows="6" placeholder="Content (Markdown supported)" @bind="formContent"></textarea>
+        <textarea class="form-control mb-2" rows="6" placeholder="Content (Markdown supported)" @bind="formContent" @bind:event="oninput"></textarea>
+        <MarkdownPreview Content="@formContent" />
         <input class="form-control mb-2" placeholder="Tags (comma separated, e.g. Work, Ideas)" @bind="formTags" />
         <div class="form-actions">
             <button class="btn btn-primary" @onclick="SaveNote">Save</button>
@@ -194,6 +195,7 @@ else
 
         HideForm();
         tags = await TagService.GetAllTagsAsync();
+        TagService.NotifyChanged();
         await LoadNotes();
     }
 

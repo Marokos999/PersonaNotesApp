@@ -13,6 +13,8 @@ A personal Markdown notes app: ASP.NET Core minimal API + Blazor WebAssembly + P
 - **Pin**, **archive/restore** and **permanent delete**
 - **Pagination** (`page` / `pageSize`, total in the `X-Total-Count` header)
 - **Auth**: ASP.NET Identity + short-lived JWT access tokens + rotating, hashed refresh tokens; the Blazor client refreshes the session transparently
+- **Tag management page** (rename, recolor, delete) and **live Markdown preview** while editing
+- **Dark mode** (follows the OS, toggle in the sidebar)
 - Per-user data isolation (covered by integration tests)
 
 ## Tech stack
@@ -20,12 +22,12 @@ A personal Markdown notes app: ASP.NET Core minimal API + Blazor WebAssembly + P
 | Layer | Technology |
 |---|---|
 | API | .NET 10, ASP.NET Core minimal APIs ([Carter](https://github.com/CarterCommunity/Carter) modules), EF Core, Npgsql |
-| Frontend | Blazor WebAssembly |
+| Frontend | Blazor WebAssembly, Markdig (client-side preview) |
 | Database | PostgreSQL 16 |
 | Auth | ASP.NET Identity, JWT bearer, refresh-token rotation |
 | Observability | Serilog, OpenTelemetry (OTLP export when `OTEL_EXPORTER_OTLP_ENDPOINT` is set), `/health` |
 | API docs | OpenAPI + [Scalar](https://github.com/scalar/scalar) (Development only, `/scalar`) |
-| Tests | xUnit, FluentAssertions, `WebApplicationFactory`, EF Core InMemory |
+| Tests | xUnit, FluentAssertions, `WebApplicationFactory`, EF Core InMemory, bUnit |
 | CI/CD | GitHub Actions, multi-stage Docker build |
 
 ## Architecture
@@ -40,7 +42,8 @@ src/
 ├── PersonaNotesApp.Shared   # DTOs shared by API and client (DataAnnotations validation)
 └── PersonaNotesApp.Web      # Blazor WASM client (auth handler, services, pages)
 tests/
-└── PersonaNotesApp.API.Tests   # unit + integration tests
+├── PersonaNotesApp.API.Tests   # unit + integration tests
+└── PersonaNotesApp.Web.Tests   # bUnit component tests + auto-refresh handler tests
 ```
 
 In production a single container serves both the API and the compiled Blazor app on port 8080, so no CORS is required.
@@ -76,6 +79,7 @@ dotnet run --project src/PersonaNotesApp.Web      # http://localhost:5047 (hot r
 | `Jwt__AccessTokenExpiryMinutes` / `Jwt__RefreshTokenExpiryDays` | Token lifetimes |
 | `Cors__AllowedOrigins__0`, `__1`, … | Origins allowed to call the API cross-origin (empty = same-origin only) |
 | `RateLimiting__AuthPermitLimit` | Auth requests per minute per IP (default 10) |
+| `ForwardedHeaders__Enabled` | `true` behind a reverse proxy so the rate limiter sees the real client IP. Trusts `X-Forwarded-For`, so enable it only when a proxy is actually in front |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | Enables OpenTelemetry export |
 
 ### Migrations
@@ -90,7 +94,7 @@ dotnet ef migrations add <Name> --project src/PersonaNotesApp.API
 dotnet test
 ```
 
-Covers repositories, `TokenService`, auth flows (register / login / refresh / logout), validation, XSS sanitization, pagination and user isolation. Full-text search needs PostgreSQL, so the in-memory tests fall back to `Contains`; the real query path is exercised by the Docker smoke test in CI.
+Covers repositories, Blazor components (bUnit), the auto-refresh HTTP handler, `TokenService`, auth flows (register / login / refresh / logout), validation, XSS sanitization, pagination and user isolation. Full-text search needs PostgreSQL, so the in-memory tests fall back to `Contains`; the real query path is exercised by the Docker smoke test in CI.
 
 ## API overview
 

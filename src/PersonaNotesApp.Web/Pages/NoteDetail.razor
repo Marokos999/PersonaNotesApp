@@ -28,7 +28,8 @@ else if (isEditing)
             <button class="btn btn-sm btn-primary" @onclick="SaveEdit">Save changes</button>
         </div>
         <input class="form-control mb-2 fs-4" placeholder="Title" @bind="formTitle" />
-        <textarea class="form-control mb-2" rows="16" placeholder="Content (Markdown supported)" @bind="formContent"></textarea>
+        <textarea class="form-control mb-2" rows="16" placeholder="Content (Markdown supported)" @bind="formContent" @bind:event="oninput"></textarea>
+        <MarkdownPreview Content="@formContent" />
         <input class="form-control mb-2" placeholder="Tags (comma separated)" @bind="formTags" />
     </div>
 }
@@ -141,6 +142,7 @@ else
     {
         var tagList = formTags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
         note = await NoteService.UpdateNoteAsync(Id, new UpdateNoteRequest { Title = formTitle, Content = formContent, Tags = tagList });
+        TagService.NotifyChanged();
         isEditing = false;
     }
 

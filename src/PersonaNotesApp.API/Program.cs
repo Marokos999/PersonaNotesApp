@@ -2,6 +2,7 @@ using System.Text;
 using System.Threading.RateLimiting;
 using Carter;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -115,7 +116,24 @@ builder.Services.AddRateLimiter(options =>
             }));
 });
 
+// Behind a reverse proxy the client IP (used by the rate limiter) is only available via X-Forwarded-For.
+// Opt-in, because trusting the header without a proxy in front would let clients spoof their IP.
+var useForwardedHeaders = builder.Configuration.GetValue<bool>("ForwardedHeaders:Enabled");
+if (useForwardedHeaders)
+{
+    builder.Services.Configure<ForwardedHeadersOptions>(options =>
+    {
+        options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+        // Trust the proxy in front of the app (container networks use changing addresses).
+        options.KnownIPNetworks.Clear();
+        options.KnownProxies.Clear();
+    });
+}
+
 var app = builder.Build();
+
+if (useForwardedHeaders)
+    app.UseForwardedHeaders();
 
 if (!isTesting)
 {

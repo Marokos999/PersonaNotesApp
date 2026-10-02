@@ -2,7 +2,9 @@
 @inject NavigationManager Nav
 @inject JwtAuthProvider Auth
 @inject HttpClient Http
+@implements IDisposable
 @inject LocalStorageService Storage
+@inject IJSRuntime JS
 
 <a class="sidebar-brand" href="/notes">
     <span class="brand-icon">📝</span>
@@ -35,6 +37,11 @@
             </button>
         }
     }
+
+    <NavLink class="nav-item" href="tags">
+        <span class="nav-icon">🏷️</span>
+        <span>Manage tags</span>
+    </NavLink>
 </nav>
 
 <div class="sidebar-footer">
@@ -45,6 +52,10 @@
             <span class="sidebar-user-email" title="@userEmail">@userEmail</span>
         </div>
     }
+    <button class="theme-toggle" @onclick="ToggleTheme" title="Toggle dark mode">
+        <span>@(isDark ? "☀️" : "🌙")</span>
+        <span>@(isDark ? "Light mode" : "Dark mode")</span>
+    </button>
     <button class="btn-logout" @onclick="DoLogout">
         <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
@@ -58,13 +69,31 @@
 @code {
     private List<TagDto> tags = [];
     private string? userEmail;
+    private bool isDark;
+
+    private async Task ToggleTheme() =>
+        isDark = await JS.InvokeAsync<string>("themeInterop.toggle") == "dark";
+
+    public void Dispose() => TagService.Changed -= OnTagsChanged;
+
+    private async void OnTagsChanged()
+    {
+        tags = await TagService.GetAllTagsAsync();
+        await InvokeAsync(StateHasChanged);
+    }
 
     protected override async Task OnInitializedAsync()
     {
-        tags = await TagService.GetAllTagsAsync();
+        TagService.Changed += OnTagsChanged;
+        isDark = await JS.InvokeAsync<string>("themeInterop.get") == "dark";
 
+        // While the auth state is still resolving, the router briefly renders the default layout for
+        // anonymous visitors too; don't call the API (and fail with 401) in that case.
         var authState = await Auth.GetAuthenticationStateAsync();
+        if (authState.User.Identity?.IsAuthenticated != true) return;
+
         userEmail = authState.User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
+        tags = await TagService.GetAllTagsAsync();
     }
 
     private void NavigateToTag(string name) =>
