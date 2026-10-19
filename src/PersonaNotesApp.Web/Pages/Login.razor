@@ -13,6 +13,11 @@
         <p class="auth-subtitle">Prijavi se na svoj nalog</p>
     </div>
 
+    @if (Deleted)
+    {
+        <div class="auth-success auth-notice">Nalog i svi podaci su trajno obrisani.</div>
+    }
+
     @if (errorMessage is not null)
     {
         <div class="auth-error">@errorMessage</div>
@@ -50,6 +55,10 @@
 
     [SupplyParameterFromQuery]
     private string? ReturnUrl { get; set; }
+
+    // Set by the account page after the account was deleted.
+    [SupplyParameterFromQuery]
+    private bool Deleted { get; set; }
 
     private async Task OnKeyDown(KeyboardEventArgs e)
     {

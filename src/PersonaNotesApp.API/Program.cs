@@ -82,6 +82,13 @@ if (!isTesting)
 builder.Services.AddAuthorization();
 builder.Services.AddScoped<INoteRepository, NoteRepository>();
 builder.Services.AddScoped<ITagRepository, TagRepository>();
+builder.Services.AddScoped<AccountService>();
+builder.Services.AddSingleton<AppInfo>();
+builder.Services.AddHsts(options =>
+{
+    options.MaxAge = TimeSpan.FromDays(365);
+    options.IncludeSubDomains = false;
+});
 builder.Services.AddCarter();
 builder.Services.AddHealthChecks().AddDbContextCheck<AppDbContext>();
 
@@ -134,6 +141,11 @@ var app = builder.Build();
 
 if (useForwardedHeaders)
     app.UseForwardedHeaders();
+
+// HSTS is only sent on HTTPS requests (behind the proxy that is known through X-Forwarded-Proto) and never for localhost.
+if (!app.Environment.IsDevelopment())
+    app.UseHsts();
+app.UseSecurityHeaders();
 
 if (!isTesting)
 {

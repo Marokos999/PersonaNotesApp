@@ -1,0 +1,137 @@
+@page "/account"
+@attribute [Authorize]
+@inject AccountService Accounts
+@inject JwtAuthProvider Auth
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<PageTitle>Account — PersonaNotes</PageTitle>
+
+<div class="notes-header">
+    <h1>Account</h1>
+    <a class="btn btn-outline-secondary btn-sm" href="/notes">← Back to Notes</a>
+</div>
+
+<section class="note-form-card account-section">
+    <h2>Your data</h2>
+    @if (email is not null)
+    {
+        <p>Signed in as <strong>@email</strong>.</p>
+    }
+    <p class="text-muted">
+        Download everything stored about you, your notes and tags, as a JSON file.
+    </p>
+
+    @if (exportError is not null)
+    {
+        <div class="auth-error">@exportError</div>
+    }
+
+    <button class="btn btn-outline-primary" @onclick="Export" disabled="@isExporting">
+        @(isExporting ? "Preparing…" : "Download my data")
+    </button>
+</section>
+
+<section class="note-form-card account-section account-danger">
+    <h2>Delete account</h2>
+    <p>
+        This permanently deletes your account together with all your notes and tags. It cannot be undone.
+        Download your data first if you want to keep a copy.
+    </p>
+
+    @if (deleteError is not null)
+    {
+        <div class="auth-error">@deleteError</div>
+    }
+
+    <div class="auth-field">
+        <label class="auth-label" for="confirm-password">Confirm with your password</label>
+        <input id="confirm-password" class="form-control" type="password" autocomplete="current-password"
+               @bind="password" @bind:event="oninput" @onkeydown="OnPasswordKeyDown" />
+    </div>
+
+    <label class="account-confirm">
+        <input type="checkbox" @bind="confirmed" />
+        <span>I understand that my account and all my notes will be deleted for good.</span>
+    </label>
+
+    <button class="btn btn-danger" @onclick="Delete" disabled="@(!CanDelete)">
+        @(isDeleting ? "Deleting…" : "Delete my account")
+    </button>
+</section>
+
+@code {
+    private string? email;
+    private string password = "";
+    private bool confirmed;
+    private bool isExporting;
+    private bool isDeleting;
+    private string? exportError;
+    private string? deleteError;
+
+    private bool CanDelete => confirmed && password.Length > 0 && !isDeleting;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await Auth.GetAuthenticationStateAsync();
+        email = state.User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
+    }
+
+    private async Task Export()
+    {
+        exportError = null;
+        isExporting = true;
+        try
+        {
+            var file = await Accounts.ExportAsync();
+            if (file is null)
+            {
+                exportError = "Your data could not be downloaded. Please try again.";
+                return;
+            }
+
+            using var stream = new MemoryStream(file.Content);
+            using var reference = new DotNetStreamReference(stream);
+            await JS.InvokeVoidAsync("fileInterop.download", file.FileName, reference);
+        }
+        catch (HttpRequestException)
+        {
+            exportError = "Your data could not be downloaded. Please try again.";
+        }
+        finally
+        {
+            isExporting = false;
+        }
+    }
+
+    private async Task OnPasswordKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && CanDelete) await Delete();
+    }
+
+    private async Task Delete()
+    {
+        if (!CanDelete) return;
+
+        deleteError = null;
+        isDeleting = true;
+        try
+        {
+            deleteError = await Accounts.DeleteAsync(password);
+        }
+        catch (HttpRequestException)
+        {
+            deleteError = "The account could not be deleted. Please try again.";
+        }
+        finally
+        {
+            isDeleting = false;
+        }
+
+        if (deleteError is not null) return;
+
+        // The refresh tokens died with the account, so only the local session is left to clear.
+        await Auth.NotifyLogoutAsync();
+        Nav.NavigateTo("/login?deleted=true");
+    }
+}

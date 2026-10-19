@@ -1,0 +1,23 @@
+@* Who runs this installation, from the server configuration (Legal__OperatorName / Legal__ContactEmail). *@
+@if (Info is null)
+{
+    <p class="text-muted">Loading…</p>
+}
+else if (Info.LegalConfigured)
+{
+    <p>
+        <strong>@Info.OperatorName</strong><br />
+        Email: <a href="@("mailto:" + Info.ContactEmail)">@Info.ContactEmail</a>
+    </p>
+}
+else
+{
+    <p class="legal-notice">
+        The operator details of this installation have not been configured yet. Whoever runs it must set
+        <code>Legal__OperatorName</code> and <code>Legal__ContactEmail</code> before offering it to others.
+    </p>
+}
+
+@code {
+    [Parameter] public AppInfoDto? Info { get; set; }
+}

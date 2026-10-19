@@ -1,0 +1,10 @@
+<nav class="legal-links @Class" aria-label="Legal">
+    <a href="/privacy">Privacy Policy</a>
+    <span aria-hidden="true">·</span>
+    <a href="/terms">Terms of Service</a>
+</nav>
+
+@code {
+    /// <summary>Extra CSS class, e.g. a compact variant for the sidebar.</summary>
+    [Parameter] public string? Class { get; set; }
+}

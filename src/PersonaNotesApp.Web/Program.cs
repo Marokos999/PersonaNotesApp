@@ -33,5 +33,7 @@ builder.Services.AddScoped(sp =>
 
 builder.Services.AddScoped<NoteService>();
 builder.Services.AddScoped<TagService>();
+builder.Services.AddScoped<AccountService>();
+builder.Services.AddScoped<AppInfoService>();
 
 await builder.Build().RunAsync();

@@ -14,6 +14,9 @@ services:
       Jwt__Audience: PersonaNotesApp
       Jwt__AccessTokenExpiryMinutes: "15"
       Jwt__RefreshTokenExpiryDays: "30"
+      App__PublicUrl: "${APP_PUBLIC_URL:-}"
+      Legal__OperatorName: "${LEGAL_OPERATOR_NAME:-}"
+      Legal__ContactEmail: "${LEGAL_CONTACT_EMAIL:-}"
     depends_on:
       pna-db:
         condition: service_healthy

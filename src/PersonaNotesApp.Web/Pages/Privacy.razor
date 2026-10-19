@@ -1,0 +1,84 @@
+@page "/privacy"
+@layout PublicLayout
+@attribute [AllowAnonymous]
+@inject AppInfoService AppInfo
+
+<PageTitle>Privacy Policy — PersonaNotes</PageTitle>
+
+<h1>Privacy Policy</h1>
+<p class="legal-updated">Last updated: 19 October 2026</p>
+
+<p>
+    PersonaNotes is a personal Markdown notes app. This policy explains what data it processes, why, and what
+    control you have over it. It is deliberately short, because the app collects very little.
+</p>
+
+<h2>1. Who is responsible</h2>
+<LegalOperator Info="info" />
+
+<h2>2. What data is processed</h2>
+<ul>
+    <li><strong>Account:</strong> your email address and your password. The password is never stored as such, only as a salted hash created by ASP.NET Core Identity, so nobody (including the operator) can read it.</li>
+    <li><strong>Your content:</strong> the notes you write (title and Markdown text), your tags, and whether a note is pinned or archived, with creation and update times.</li>
+    <li><strong>Sessions:</strong> when you sign in, a short-lived access token and a long-lived refresh token are issued. The server keeps only a hash of the refresh token and its expiry date.</li>
+    <li><strong>Technical data:</strong> the server and the reverse proxy in front of it may log technical information such as IP address, requested path, status code and timing, to keep the service secure and to fix errors. Your IP address is also used in memory to limit repeated sign-in attempts.</li>
+</ul>
+<p>No other personal data is requested. There are no profiles, no analytics and no advertising.</p>
+
+<h2>3. Why it is processed</h2>
+<p>
+    Account and content data are processed to provide the notes service you asked for (Art. 6(1)(b) GDPR).
+    Technical data is processed for the security and reliable operation of the service (Art. 6(1)(f) GDPR).
+    Data is not used for any other purpose, and it is not sold or shared for marketing.
+</p>
+
+<h2>4. Cookies and browser storage</h2>
+<p>
+    PersonaNotes sets no cookies. Your browser's local storage holds your sign-in tokens, which are removed when you
+    sign out, and your light/dark theme choice. Both are strictly necessary for the app to work, which is why no
+    consent banner is shown.
+</p>
+
+<h2>5. Third parties</h2>
+<ul>
+    <li><strong>Hosting:</strong> the app runs on a virtual server at Hetzner Cloud, which processes the data on the operator's behalf.</li>
+    <li><strong>Google Fonts:</strong> the app loads its typeface from Google Fonts. When a page opens, your browser contacts Google's servers (<code>fonts.googleapis.com</code> and <code>fonts.gstatic.com</code>), which receive your IP address and browser details.</li>
+    <li><strong>Images in notes:</strong> if a note embeds an image from another website, your browser loads it from that site, which can see your IP address.</li>
+</ul>
+
+<h2>6. How long data is kept</h2>
+<p>
+    Data is kept until you delete it or your account. Deleting the account removes your notes, tags, sessions and
+    the account itself immediately and permanently. Server backups, if the operator keeps any, are replaced on their
+    regular schedule, after which no copy of the deleted data remains.
+</p>
+
+<h2>7. Your rights</h2>
+<p>You can exercise most of your rights yourself, in the app, under <a href="/account">Account</a>:</p>
+<ul>
+    <li><strong>Access and portability:</strong> <em>Download my data</em> gives you all your notes and tags as a JSON file.</li>
+    <li><strong>Erasure:</strong> <em>Delete account</em> erases everything described above.</li>
+    <li><strong>Rectification:</strong> you can edit or delete any note or tag at any time.</li>
+</ul>
+<p>
+    For anything else, such as a question or an objection to processing, contact the operator using the details above.
+    You also have the right to lodge a complaint with your local data protection authority.
+</p>
+
+<h2>8. Security</h2>
+<p>
+    Traffic is encrypted with HTTPS. Passwords and refresh tokens are stored hashed. Note content is sanitized before
+    it is displayed, and every request is checked so that you can only reach your own data.
+</p>
+
+<h2>9. Children</h2>
+<p>The service is not directed at children under 16 and should not be used by them.</p>
+
+<h2>10. Changes</h2>
+<p>If this policy changes, the date at the top is updated.</p>
+
+@code {
+    private AppInfoDto? info;
+
+    protected override async Task OnInitializedAsync() => info = await AppInfo.GetAsync();
+}
