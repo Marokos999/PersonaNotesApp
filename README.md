@@ -66,9 +66,13 @@ The app is available at <http://localhost:8080>; health check at `/health`. Migr
 
 The production setup mirrors my ToDoList project: a Hetzner VPS where a shared [Caddy](https://caddyserver.com) reverse proxy terminates HTTPS (certificates are issued and renewed automatically) and forwards to the app container. PostgreSQL runs in the same Docker Compose stack and is not reachable from outside.
 
-Every push to `main` runs [`ci.yml`](.github/workflows/ci.yml). When it passes, [`deploy.yml`](.github/workflows/deploy.yml) connects to the server over SSH, checks out the tested commit, runs `docker compose up -d --build` and waits until `/health` answers. It needs the repository secrets `DEPLOY_HOST`, `DEPLOY_SSH_KEY` and `DEPLOY_KNOWN_HOSTS` (the pinned host key). The application's own settings live in a `.env` file on the server and never in Git.
+Every push to `main` runs [`ci.yml`](.github/workflows/ci.yml). When it passes, [`deploy.yml`](.github/workflows/deploy.yml) connects to the server over SSH, checks out the tested commit, runs `docker compose up -d --build` and waits until `/health` answers. It needs the repository secrets `DEPLOY_HOST`, `DEPLOY_SSH_KEY` and `DEPLOY_KNOWN_HOSTS` (the pinned host key).
 
-[`docker-compose.prod.yml`](docker-compose.prod.yml) joins an external Docker network called `edge` as `notes-app:8080`, publishes no host ports and keeps PostgreSQL inside the compose network. The proxy needs a site pointing at `notes-app:8080`; behind it the app trusts the `X-Forwarded-*` headers (`ForwardedHeaders__Enabled=true`). To set up the app on a server that already runs the proxy:
+[`docker-compose.prod.yml`](docker-compose.prod.yml) joins an external Docker network called `edge` as `notes-app:8080`, publishes no host ports and keeps PostgreSQL inside the compose network. The proxy needs a site pointing at `notes-app:8080`; behind it the app trusts the `X-Forwarded-*` headers (`ForwardedHeaders__Enabled=true`).
+
+The first pipeline run sets the server up by itself: it clones the repository, creates the `.env` with a freshly generated database password and JWT secret (they never leave the server and are never in Git) and starts the stack. The only manual step is the proxy site (a block for `notes-app:8080` in the Caddyfile, then a reload). Optionally define the repository variables `LEGAL_OPERATOR_NAME` and `LEGAL_CONTACT_EMAIL` (Settings → Secrets and variables → Actions → Variables) before that first run: they are written into the `.env` and shown on the Privacy Policy and Terms pages, which otherwise display a "not configured" notice. After the first run the `.env` is never touched again, so later changes are made in that file on the server. Do not delete it while the database volume exists, or the generated password would no longer match.
+
+To set the app up by hand instead, on a server that already runs the proxy:
 
 ```bash
 git clone https://github.com/Marokos999/PersonaNotesApp.git ~/PersonaNotesApp && cd ~/PersonaNotesApp
@@ -77,7 +81,7 @@ cp .env.example .env                     # set POSTGRES_PASSWORD (letters/digits
 docker compose -f docker-compose.prod.yml up -d --build
 ```
 
-Fill in `LEGAL_OPERATOR_NAME` and `LEGAL_CONTACT_EMAIL` before sharing the site: they are shown on the Privacy Policy and Terms pages, which otherwise display a "not configured" notice. After the first start, updates are done by the pipeline. Migrations run on startup.
+Migrations run on startup.
 
 ## Local development
 

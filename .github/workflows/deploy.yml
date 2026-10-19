@@ -2,6 +2,9 @@ name: Deploy
 
 # Runs after the CI workflow succeeded on main and updates the Hetzner server over SSH.
 # Needs the secrets DEPLOY_HOST, DEPLOY_SSH_KEY and DEPLOY_KNOWN_HOSTS (see README).
+# The first run also clones the repository and creates the server's .env, so nothing has to be set up by hand.
+# Optional repository variables (Settings > Secrets and variables > Actions > Variables), read on that first run only:
+# LEGAL_OPERATOR_NAME and LEGAL_CONTACT_EMAIL, shown on the privacy policy and terms pages.
 on:
   workflow_run:
     workflows: [CI]
@@ -39,10 +42,40 @@ jobs:
       - name: Deploy
         env:
           HOST: ${{ secrets.DEPLOY_HOST }}
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          # Only read on the very first deploy, when the server's .env is created (edit it on the server afterwards)
+          LEGAL_OPERATOR_NAME: ${{ vars.LEGAL_OPERATOR_NAME }}
+          LEGAL_CONTACT_EMAIL: ${{ vars.LEGAL_CONTACT_EMAIL }}
         run: |
           [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
-          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes "deploy@$HOST" \
-            "cd ~/PersonaNotesApp && git fetch --quiet origin && git reset --hard $SHA && docker compose -f docker-compose.prod.yml up -d --build --remove-orphans && docker image prune -f"
+          # printf %q quotes every value, so nothing here can break out of the remote script
+          {
+            printf 'SHA=%q\nREPO_URL=%q\nPUBLIC_URL=%q\nOPERATOR=%q\nCONTACT=%q\n' \
+              "$SHA" "$REPO_URL" "$URL" "$LEGAL_OPERATOR_NAME" "$LEGAL_CONTACT_EMAIL"
+            cat <<'REMOTE'
+          set -euo pipefail
+          export GIT_TERMINAL_PROMPT=0
+          cd ~
+
+          # First deploy: fetch the code and create the .env. Its secrets are generated here and never leave the server.
+          [ -d PersonaNotesApp/.git ] || git clone --quiet "$REPO_URL" PersonaNotesApp
+          cd PersonaNotesApp
+          if [ ! -f .env ]; then
+            (
+              umask 077
+              printf 'POSTGRES_PASSWORD=%s\nJWT_SECRET=%s\nAPP_PUBLIC_URL=%s\nLEGAL_OPERATOR_NAME=%s\nLEGAL_CONTACT_EMAIL=%s\n' \
+                "$(openssl rand -hex 24)" "$(openssl rand -hex 32)" "$PUBLIC_URL" "$OPERATOR" "$CONTACT" > .env
+            )
+          fi
+          docker network create edge >/dev/null 2>&1 || true
+
+          git fetch --quiet origin
+          git reset --hard "$SHA"
+          # </dev/null: nothing may swallow the rest of this script from stdin
+          docker compose -f docker-compose.prod.yml up -d --build --remove-orphans </dev/null
+          docker image prune -f </dev/null
+          REMOTE
+          } | ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes "deploy@$HOST" bash -s
 
       - name: Smoke test
         run: |
